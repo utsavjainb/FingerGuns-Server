@@ -5,13 +5,13 @@ from collections import Counter
 app = Flask(__name__)
 
 moves = {"READY" : "0","RELOAD" : "1" ,"SHIELD" : "2" ,"SHOOT" : "3" }
+rmoves = {"0": "READY" ,  "1": "RELOAD" ,"2": "SHIELD", "3" :"SHOOT"} 
 
 class Game:
     def __init__(self):
         self.p1id = "1"  
         self.p2id = "2" 
-        self.p1url = ""
-        self.p2url = ""
+        self.urls = {self.p1id: "", self.p2id: ""} 
         self.started = False
         self.readystate = {self.p1id: False, self.p2id: False} 
         self.currmove = {self.p1id: False, self.p2id: False} 
@@ -28,11 +28,11 @@ class Game:
             time.sleep(2)
         print("Players Ready!")
     
-    def requestmove(self, pid, purl):
-        data = { "msg" : "SENDMOVE" , "bulletcnt" : self.bullets[pid] }
-        res = (requests.post(url=purl, data = packet)).json()   
+    def requestmove(self, pid):
+        packet = { "msg" : "SENDMOVE" , "bulletcnt" : self.bullets[pid] }
+        res = (requests.post(url=self.urls[pid], data = packet)).json()   
         self.currmove[res["pid"]] = res["move"]
-    
+         
     def hasbullets(self, pid):
         if self.bullets[pid] > 0:
             return True
@@ -41,13 +41,15 @@ class Game:
     def evalmoves(self):
         p1move = self.currmove[self.p1id]         
         p2move = self.currmove[self.p2id]         
-        if p1move = moves["RELOAD"]:
+        print("p1move: ", rmoves[p1move])
+        print("p2move: ", rmoves[p2move])
+        if p1move == moves["RELOAD"]:
             self.bullets[self.p1id] += 1
-        if p2move = moves["RELOAD"]:
+        if p2move == moves["RELOAD"]:
             self.bullets[self.p2id] += 1
             
         #both shoot 
-        if p1move == p2move == moves["SHOOT"] 
+        if p1move == p2move == moves["SHOOT"]:
             if self.bullets[self.p1id] > 0 and self.bullets[self.p2id] > 0 :
                 #tie
                 self.bullets -= self.decrementbullet
@@ -78,16 +80,23 @@ class Game:
                 
         #dont need to handle cases if one player reload and other shields, or if both are shielding
             
-
+    def gameovermsg(self, pid):
+        packet = { "msg" : "GAMEOVER" , "winner" : self.winner}
+        res = (requests.post(url=self.urls[pid], data = packet)).json()   
+        print(res)
+    
     def gameloop(self):
+        print("starting main game loop")
         while(self.winner is None):
-            t1 = threading.Thread(target=self.requestmove, args=(self.p1id, self.p1url, ))
-            t2 = threading.Thread(target=self.requestmove, args=(self.p2id, self.p2url, ))
+            t1 = threading.Thread(target=self.requestmove, args=(self.p1id, ))
+            t2 = threading.Thread(target=self.requestmove, args=(self.p2id, ))
             t1.start()
             t2.start()
 
             #spin until both players have entered a move
             while(not all(self.currmove.values())):
+                time.sleep(2)
+                print("currmoves: ", self.currmove)
                 pass
 
             self.evalmoves()
@@ -96,10 +105,14 @@ class Game:
             for pid in self.currmove:
                 self.currmove[pid] = False
     
-        print(self.winner)
+        print("winner: ", self.winner)
+        t1.join()
+        t2.join()
+        t1 = threading.Thread(target=self.gameovermsg, args=(self.p1id, ))
+        t2 = threading.Thread(target=self.gameovermsg, args=(self.p2id, ))
+        t1.start()
+        t2.start()
         
-        data = { "msg" : "GAMEOVER" , "winner" : winnerid}
-        post(data)
 
     
 
@@ -107,9 +120,13 @@ class Game:
 #function receives player moves
 def receiver():
     data = request.form
+
+    pid = data["pid"]
+    purl = data["purl"] + "/receiver"
+
     if data["move"] == moves["READY"]:
-        pid = data["player"]
         game.readystate[pid] = True
+        game.urls[pid] = purl 
         ret = jsonify(result=1, msg= "PLAYER_READY")
         return ret
     elif data["move"] == moves["RELOAD"]:
@@ -119,7 +136,7 @@ def receiver():
     elif data["move"] == moves["SHOOT"]:
         pass
     else:
-        return jsonify(result=1, msg= " NOT OK")
+        return jsonify(result=1, msg= "NOT OK")
     ret = jsonify(result=1, msg= "OK")
     return ret
 
@@ -131,3 +148,4 @@ if __name__ == '__main__':
     ft = threading.Thread(target=flaskThread, args=(8080,)) 
     ft.start()
     game.startgame()
+    game.gameloop()

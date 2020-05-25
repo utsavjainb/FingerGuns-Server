@@ -4,36 +4,50 @@ from flask import Flask, render_template, request, jsonify
 app = Flask(__name__)
 
 moves = {"READY" : "0","RELOAD" : "1" ,"SHIELD" : "2" ,"SHOOT" : "3" }
-pid = 99 
-pport = ""
-purl = ""
 url = "http://127.0.0.1:8080/receiver"
-gameover = False
+class Player:
+    def __init__(self):
+        self.pid = 99 
+        self.pport = ""
+        self.purl = ""
+        self.gameover = False
+        self.winner = None
 
 
 @app.route('/receiver', methods = ['POST'])
 def receiver():
     data = request.form
-    packet = {"player" : pid, "move" : moves["READY"] } 
+    packet = {"pid" : player.pid, "move" : moves["READY"] } 
     if data['msg'] == "SENDMOVE":
-        print("Enter your move: ")
+        pmove = input("Enter your move: ")
         #get move from RPi
         #pmove["move"] = getmove()  
-        res = requests.post(url=url, data = packet)
+        packet["move"] = pmove
+        #res = requests.post(url=url, data = packet)
+        return jsonify(packet)
     
     elif data['msg'] == "GAMEOVER":
-        gameover = True
+        packet = {"pid" : player.pid, "msg": "game over ack"} 
+        player.gameover = True
+        player.winner = data['winner'] 
+        return jsonify(packet)
+    return "OK"
     
         
 
 #keep sending readyup until game starting message receieved back
 def readyup():
-    url = "http://127.0.0.1:8080/receiver"
-    data = {"pid" : pid, "move" : moves["READY"], "purl": purl }
+    data = {"pid" : player.pid, "move" : moves["READY"], "purl": player.purl }
     packet = json.loads(json.dumps(data))
     time.sleep(2)
     while(True):
-        res = (requests.post(url=url, data = packet)).json()
+        print("url: ", url)
+        print("packet: ", packet)
+        res1  = requests.post(url=url, data = packet)
+        print(res1)
+        res = res1.json()
+        #res = (requests.post(url=url, data = packet)).json()
+    
         if res['msg'] == "PLAYER_READY":
             break
         time.sleep(3)
@@ -41,29 +55,24 @@ def readyup():
 
    
 def playgame():
-    while(not gameover):
-        pass
-    print(winner)
-     
-
-def mainloop():
     readyup()
-    playgame()
+    while(not player.gameover):
+        pass
+    if player.winner == player.pid:
+        print("Won Game! :) ")
+    else:
+        print("Lost game! :( ")
 
-'''
-@app.route('/listener', methods = ['POST'])
-def listener():
-    pass
-'''
 
 def flaskThread(portnum):
     app.run(port=portnum, debug=False)
 
 if __name__ == '__main__':
-    pid = sys.argv[1]
-    pport = sys.argv[2]
-    purl = sys.argv[3] 
+    player = Player()
+    player.pid = sys.argv[1]
+    player.pport = sys.argv[2]
+    player.purl = sys.argv[3] 
     
-    ft = threading.Thread(target=flaskThread, args=(pport,)) 
+    ft = threading.Thread(target=flaskThread, args=(player.pport,)) 
     ft.start()
-    mainloop()
+    playgame()
