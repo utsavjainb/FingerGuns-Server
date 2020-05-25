@@ -1,13 +1,18 @@
-import datetime, requests, json, sys, time, threading, socket
+import datetime, requests, json, sys, time, threading, socket, logging
 from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR) 
+
 moves = {"READY" : "0","RELOAD" : "1" ,"SHIELD" : "2" ,"SHOOT" : "3" }
+rmoves = {"0": "READY" ,  "1": "RELOAD" ,"2": "SHIELD", "3" :"SHOOT"}
 url = "http://127.0.0.1:8080/receiver"
+
 class Player:
     def __init__(self):
-        self.pid = 99 
+        self.pid = "99" 
         self.pport = ""
         self.purl = ""
         self.gameover = False
@@ -19,11 +24,19 @@ def receiver():
     data = request.form
     packet = {"pid" : player.pid, "move" : moves["READY"] } 
     if data['msg'] == "SENDMOVE":
+        print(f"Round {data['roundnum']} , Bullet count {data['bulletcnt']}")
         pmove = input("Enter your move: ")
         #get move from RPi
         #pmove["move"] = getmove()  
         packet["move"] = pmove
         #res = requests.post(url=url, data = packet)
+        return jsonify(packet)
+    
+
+    elif data['msg'] == "ROUNDRES":
+        #printout round resutl
+        print("Your move: ", rmoves[data["pmove"]])
+        print("Opp move: ", rmoves[data["oppmove"]])
         return jsonify(packet)
     
     elif data['msg'] == "GAMEOVER":
@@ -40,6 +53,7 @@ def readyup():
     data = {"pid" : player.pid, "move" : moves["READY"], "purl": player.purl }
     packet = json.loads(json.dumps(data))
     time.sleep(2)
+    x = input("ready for game?")
     while(True):
         print("url: ", url)
         print("packet: ", packet)
@@ -55,13 +69,16 @@ def readyup():
 
    
 def playgame():
-    readyup()
-    while(not player.gameover):
-        pass
-    if player.winner == player.pid:
-        print("Won Game! :) ")
-    else:
-        print("Lost game! :( ")
+    while(True): 
+        readyup()
+        while(not player.gameover):
+            pass
+        if player.winner == player.pid:
+            print("Won Game! :) ")
+        else:
+            print("Lost game! :( ")
+        player.gameover = False
+        player.winner = None
 
 
 def flaskThread(portnum):

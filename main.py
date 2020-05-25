@@ -1,8 +1,11 @@
-import  datetime, requests, time, threading
+import  datetime, requests, time, threading, logging
 from flask import Flask, render_template, request, jsonify
 from collections import Counter
 #from flask_restful import Resource, Api
 app = Flask(__name__)
+
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR) 
 
 moves = {"READY" : "0","RELOAD" : "1" ,"SHIELD" : "2" ,"SHOOT" : "3" }
 rmoves = {"0": "READY" ,  "1": "RELOAD" ,"2": "SHIELD", "3" :"SHOOT"} 
@@ -17,8 +20,9 @@ class Game:
         self.currmove = {self.p1id: False, self.p2id: False} 
         #self.bullets = {self.p1id: 0, self.p2id: 0} 
         self.bullets = Counter({self.p1id: 0, self.p2id: 0})
-        self.decrementbullet = Counter({self.p1id: 1, self.p2id: 1})
+        self.onebullet = Counter({self.p1id: 1, self.p2id: 1})
         self.winner = None
+        self.roundnum = 1
 
     def startgame(self):
         self.started = True
@@ -29,7 +33,7 @@ class Game:
         print("Players Ready!")
     
     def requestmove(self, pid):
-        packet = { "msg" : "SENDMOVE" , "bulletcnt" : self.bullets[pid] }
+        packet = { "msg" : "SENDMOVE" , "bulletcnt" : self.bullets[pid], "roundnum" : self.roundnum }
         res = (requests.post(url=self.urls[pid], data = packet)).json()   
         self.currmove[res["pid"]] = res["move"]
          
@@ -52,7 +56,7 @@ class Game:
         if p1move == p2move == moves["SHOOT"]:
             if self.bullets[self.p1id] > 0 and self.bullets[self.p2id] > 0 :
                 #tie
-                self.bullets -= self.decrementbullet
+                self.bullets -= self.onebullet
             elif self.bullets[self.p1id] > 0: 
                 #p2 does not have bullets, p1 wins
                 self.winner = self.p1id
@@ -80,6 +84,14 @@ class Game:
                 
         #dont need to handle cases if one player reload and other shields, or if both are shielding
             
+    def sendround(self):
+        packet = { "msg" : "ROUNDRES" , "pmove" : self.currmove[self.p1id], "oppmove": self.currmove[self.p2id] }
+        res = requests.post(url=self.urls[self.p1id], data = packet)   
+        packet = { "msg" : "ROUNDRES" , "pmove" : self.currmove[self.p2id], "oppmove": self.currmove[self.p1id] }
+        res = requests.post(url=self.urls[self.p2id], data = packet)  
+           
+ 
+
     def gameovermsg(self, pid):
         packet = { "msg" : "GAMEOVER" , "winner" : self.winner}
         res = (requests.post(url=self.urls[pid], data = packet)).json()   
@@ -96,18 +108,20 @@ class Game:
             #spin until both players have entered a move
             while(not all(self.currmove.values())):
                 time.sleep(2)
-                print("currmoves: ", self.currmove)
                 pass
+            t1.join()
+            t2.join()
+
+            self.sendround()
 
             self.evalmoves()
+            self.roundnum += 1
 
             #reset currmoves to False
             for pid in self.currmove:
                 self.currmove[pid] = False
     
         print("winner: ", self.winner)
-        t1.join()
-        t2.join()
         t1 = threading.Thread(target=self.gameovermsg, args=(self.p1id, ))
         t2 = threading.Thread(target=self.gameovermsg, args=(self.p2id, ))
         t1.start()
@@ -147,5 +161,7 @@ if __name__ == '__main__':
     game = Game()
     ft = threading.Thread(target=flaskThread, args=(8080,)) 
     ft.start()
-    game.startgame()
-    game.gameloop()
+    while(True):
+        game.startgame()
+        game.gameloop()
+        game = Game()
