@@ -1,7 +1,11 @@
-import  datetime, requests, time, threading, logging
+import datetime, time, threading, logging, json
 from flask import Flask, render_template, request, jsonify
 from collections import Counter
+import urllib3
+http = urllib3.PoolManager()
+import requests
 #from flask_restful import Resource, Api
+
 app = Flask(__name__)
 
 log = logging.getLogger('werkzeug')
@@ -35,6 +39,8 @@ class Game:
     def requestmove(self, pid):
         packet = { "msg" : "SENDMOVE" , "bulletcnt" : self.bullets[pid], "roundnum" : self.roundnum }
         res = (requests.post(url=self.urls[pid], data = packet)).json()   
+        #r = http.request('POST', self.urls[pid], fields = packet)
+        #res = json.loads(r.data.decode('utf-8'))
         self.currmove[res["pid"]] = res["move"]
          
     def hasbullets(self, pid):
@@ -87,14 +93,16 @@ class Game:
     def sendround(self):
         packet = { "msg" : "ROUNDRES" , "pmove" : self.currmove[self.p1id], "oppmove": self.currmove[self.p2id] }
         res = requests.post(url=self.urls[self.p1id], data = packet)   
+        #res = http.request('POST', self.urls[self.p1id], fields = packet)
         packet = { "msg" : "ROUNDRES" , "pmove" : self.currmove[self.p2id], "oppmove": self.currmove[self.p1id] }
         res = requests.post(url=self.urls[self.p2id], data = packet)  
-           
+        #res = http.request('POST', self.urls[self.p2id], fields = packet)
  
 
     def gameovermsg(self, pid):
         packet = { "msg" : "GAMEOVER" , "winner" : self.winner}
         res = (requests.post(url=self.urls[pid], data = packet)).json()   
+        #res = http.request('POST', self.urls[pid], fields = packet)
         print(res)
     
     def gameloop(self):
@@ -127,7 +135,15 @@ class Game:
         t1.start()
         t2.start()
         
+@app.route('/') 
+def rootroute():
+    return "<h1 style='color: red;'>I'm a red H1 heading!</h1>" 
 
+@app.route('/tester', methods = ['GET'])
+def tester():
+    ret = jsonify(result=1, msg= "TESTER")
+    
+    return ret 
     
 
 @app.route('/receiver', methods = ['POST'])
@@ -154,14 +170,16 @@ def receiver():
     ret = jsonify(result=1, msg= "OK")
     return ret
 
+
 def flaskThread(portnum):
     app.run(port=portnum, debug=False)
 
-if __name__ == '__main__':
+#if __name__ == '__main__':
+game = Game()
+ft = threading.Thread(target=flaskThread, args=(8080,)) 
+ft.start()
+while(True):
+    game.startgame()
+    game.gameloop()
     game = Game()
-    ft = threading.Thread(target=flaskThread, args=(8080,)) 
-    ft.start()
-    while(True):
-        game.startgame()
-        game.gameloop()
-        game = Game()
+    

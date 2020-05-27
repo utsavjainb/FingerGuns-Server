@@ -1,5 +1,6 @@
-import datetime, requests, json, sys, time, threading, socket, logging
+import datetime, json, sys, time, threading, socket, logging
 from flask import Flask, render_template, request, jsonify
+import requests
 
 app = Flask(__name__)
 
@@ -9,6 +10,9 @@ log.setLevel(logging.ERROR)
 moves = {"READY" : "0","RELOAD" : "1" ,"SHIELD" : "2" ,"SHOOT" : "3" }
 rmoves = {"0": "READY" ,  "1": "RELOAD" ,"2": "SHIELD", "3" :"SHOOT"}
 url = "http://127.0.0.1:8080/receiver"
+#url = "http://a1705e88.ngrok.io/receiver"
+#url = "https://nodal-figure-276104.wl.r.appspot.com/receiver"
+# url = "https://finger-guns-278401.wl.r.appspot.com/receiver"
 
 class Player:
     def __init__(self):
@@ -29,7 +33,6 @@ def receiver():
         #get move from RPi
         #pmove["move"] = getmove()  
         packet["move"] = pmove
-        #res = requests.post(url=url, data = packet)
         return jsonify(packet)
     
 
@@ -55,12 +58,9 @@ def readyup():
     time.sleep(2)
     x = input("ready for game?")
     while(True):
-        print("url: ", url)
-        print("packet: ", packet)
         res1  = requests.post(url=url, data = packet)
         print(res1)
         res = res1.json()
-        #res = (requests.post(url=url, data = packet)).json()
     
         if res['msg'] == "PLAYER_READY":
             break
