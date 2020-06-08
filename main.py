@@ -1,11 +1,7 @@
-import datetime, time, threading, logging, json
+import  datetime, requests, time, threading, logging, json
 from flask import Flask, render_template, request, jsonify
 from collections import Counter
-import urllib3
-http = urllib3.PoolManager()
-import requests
 #from flask_restful import Resource, Api
-
 app = Flask(__name__)
 
 log = logging.getLogger('werkzeug')
@@ -22,11 +18,14 @@ class Game:
         self.started = False
         self.readystate = {self.p1id: False, self.p2id: False} 
         self.currmove = {self.p1id: False, self.p2id: False} 
+        self.prevmove = {self.p1id: False, self.p2id: False} 
         #self.bullets = {self.p1id: 0, self.p2id: 0} 
         self.bullets = Counter({self.p1id: 0, self.p2id: 0})
         self.onebullet = Counter({self.p1id: 1, self.p2id: 1})
         self.winner = None
         self.roundnum = 1
+        self.p1move_dist = {"RELOAD" : 0 ,"SHIELD" : 0 ,"SHOOT" : 0} 
+        self.p2move_dist = {"RELOAD" : 0 ,"SHIELD" : 0 ,"SHOOT" : 0} 
 
     def startgame(self):
         self.started = True
@@ -37,10 +36,11 @@ class Game:
         print("Players Ready!")
     
     def requestmove(self, pid):
-        packet = { "msg" : "SENDMOVE" , "bulletcnt" : self.bullets[pid], "roundnum" : self.roundnum }
+        if pid == self.p1id:
+            packet = { "msg" : "SENDMOVE" , "bulletcnt" : self.bullets[pid], "roundnum" : self.roundnum ,"pmove" : self.prevmove[self.p1id], "oppmove": self.prevmove[self.p2id] }
+        else:
+            packet = { "msg" : "SENDMOVE" , "bulletcnt" : self.bullets[pid], "roundnum" : self.roundnum ,"pmove" : self.prevmove[self.p2id], "oppmove": self.prevmove[self.p1id] }
         res = (requests.post(url=self.urls[pid], data = packet)).json()   
-        #r = http.request('POST', self.urls[pid], fields = packet)
-        #res = json.loads(r.data.decode('utf-8'))
         self.currmove[res["pid"]] = res["move"]
          
     def hasbullets(self, pid):
@@ -51,6 +51,13 @@ class Game:
     def evalmoves(self):
         p1move = self.currmove[self.p1id]         
         p2move = self.currmove[self.p2id]         
+
+        #storing in movedist
+        print('incrementing move count')
+        self.p1move_dist[rmoves[p1move]] += 1
+        self.p2move_dist[rmoves[p2move]] += 1
+        print(self.p1move_dist)
+
         print("p1move: ", rmoves[p1move])
         print("p2move: ", rmoves[p2move])
         if p1move == moves["RELOAD"]:
@@ -70,7 +77,7 @@ class Game:
                 #p1 does not have bullets, p2 wins
                 self.winner = self.p2id
 
-        #p1 shoots        
+        #p1 shoots       
         elif p1move == moves["SHOOT"] and self.bullets[self.p1id] > 0:
             if p2move == moves["SHIELD"]:
                 #p2 blocks p1 bullet
@@ -93,17 +100,29 @@ class Game:
     def sendround(self):
         packet = { "msg" : "ROUNDRES" , "pmove" : self.currmove[self.p1id], "oppmove": self.currmove[self.p2id] }
         res = requests.post(url=self.urls[self.p1id], data = packet)   
-        #res = http.request('POST', self.urls[self.p1id], fields = packet)
         packet = { "msg" : "ROUNDRES" , "pmove" : self.currmove[self.p2id], "oppmove": self.currmove[self.p1id] }
         res = requests.post(url=self.urls[self.p2id], data = packet)  
-        #res = http.request('POST', self.urls[self.p2id], fields = packet)
+           
  
 
     def gameovermsg(self, pid):
-        packet = { "msg" : "GAMEOVER" , "winner" : self.winner}
-        res = (requests.post(url=self.urls[pid], data = packet)).json()   
-        #res = http.request('POST', self.urls[pid], fields = packet)
-        print(res)
+        if pid == self.p1id:
+            #packet = { "msg" : "GAMEOVER" , "winner" : self.winner, "PStats": self.p1move_dist, "OppStats": self.p2move_dist}
+            packet = { "msg" : "GAMEOVER" , "winner" : self.winner, "P_RELOAD": self.p1move_dist["RELOAD"], "P_SHIELD": self.p1move_dist["SHIELD"], "P_SHOOT": self.p1move_dist["SHOOT"], "O_RELOAD": self.p2move_dist["RELOAD"], "O_SHIELD": self.p2move_dist["SHIELD"], "O_SHOOT": self.p2move_dist["SHOOT"], "pmove" : self.currmove[self.p1id], "oppmove": self.currmove[self.p2id] }
+
+        else:
+            packet = { "msg" : "GAMEOVER" , "winner" : self.winner, "O_RELOAD": self.p1move_dist["RELOAD"], "O_SHIELD": self.p1move_dist["SHIELD"], "O_SHOOT": self.p1move_dist["SHOOT"], "P_RELOAD": self.p2move_dist["RELOAD"], "P_SHIELD": self.p2move_dist["SHIELD"], "P_SHOOT": self.p2move_dist["SHOOT"] , "pmove" : self.currmove[self.p2id], "oppmove": self.currmove[self.p1id] }
+
+        #joutput = json.dumps(output)
+        #packet = json.dumps(packet)
+        #packet = jsonify(packet)
+        print("packet: ", packet)
+        try:
+            print("sending game stats")
+            res = requests.post(url=self.urls[pid], data = packet)
+            print("Game over acked: ", res)
+        except:
+            print("no response")
     
     def gameloop(self):
         print("starting main game loop")
@@ -127,6 +146,7 @@ class Game:
 
             #reset currmoves to False
             for pid in self.currmove:
+                self.prevmove[pid] = self.currmove[pid]
                 self.currmove[pid] = False
     
         print("winner: ", self.winner)
@@ -135,15 +155,7 @@ class Game:
         t1.start()
         t2.start()
         
-@app.route('/') 
-def rootroute():
-    return "<h1 style='color: red;'>I'm a red H1 heading!</h1>" 
 
-@app.route('/tester', methods = ['GET'])
-def tester():
-    ret = jsonify(result=1, msg= "TESTER")
-    
-    return ret 
     
 
 @app.route('/receiver', methods = ['POST'])
@@ -170,16 +182,15 @@ def receiver():
     ret = jsonify(result=1, msg= "OK")
     return ret
 
-
 def flaskThread(portnum):
     app.run(port=portnum, debug=False)
 
-#if __name__ == '__main__':
-game = Game()
-ft = threading.Thread(target=flaskThread, args=(8080,)) 
-ft.start()
-while(True):
-    game.startgame()
-    game.gameloop()
+if __name__ == '__main__':
     game = Game()
-    
+    ft = threading.Thread(target=flaskThread, args=(8080,)) 
+    ft.start()
+    while(True):
+        game.startgame()
+        game.gameloop()
+        game = Game()
+
