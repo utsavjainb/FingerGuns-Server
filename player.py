@@ -9,8 +9,8 @@ log.setLevel(logging.ERROR)
 
 moves = {"READY" : "0","RELOAD" : "1" ,"SHIELD" : "2" ,"SHOOT" : "3" }
 rmoves = {"0": "READY" ,  "1": "RELOAD" ,"2": "SHIELD", "3" :"SHOOT"}
-url = "http://127.0.0.1:8080/receiver"
-#url = "http://a1705e88.ngrok.io/receiver"
+#url = "http://127.0.0.1:8080/receiver"
+url = "http://3d81b44c.ngrok.io/receiver"
 #url = "https://nodal-figure-276104.wl.r.appspot.com/receiver"
 # url = "https://finger-guns-278401.wl.r.appspot.com/receiver"
 

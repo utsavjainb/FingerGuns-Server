@@ -6,7 +6,7 @@ import socket, io
 s = socket.socket()
 print("Starting Fog Server")
 listening = True
-piport = 12345
+piport = 12345 
 s.bind(('', piport))
 print("socket binded to %s" % (piport))
 s.listen(5)
